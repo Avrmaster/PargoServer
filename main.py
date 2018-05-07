@@ -54,14 +54,14 @@ def edit():
     return f"Got {request.args} as a args. {request.data} as data. {request.form} as form. {request.values} as values"
 
 
-@app.route('/add_track_code', methods=["GET", "POST"])
-def add_track_code():
-    return f"Got {request.args} as a args. {request.data} as data. {request.form} as form. {request.values} as values"
-
-
-@app.route('/get_user', methods=["GET", "POST"])
-def get_user():
-    return f"Got {request.args} as a args. {request.data} as data. {request.form} as form. {request.values} as values"
+# @app.route('/add_track_code', methods=["GET", "POST"])
+# def add_track_code():
+#     return f"Got {request.args} as a args. {request.data} as data. {request.form} as form. {request.values} as values"
+#
+#
+# @app.route('/get_user', methods=["GET", "POST"])
+# def get_user():
+#     return f"Got {request.args} as a args. {request.data} as data. {request.form} as form. {request.values} as values"
 
 
 if __name__ == '__main__':

@@ -7,7 +7,7 @@ from flask import Flask, request
 from google.cloud import datastore
 
 app = Flask(__name__)
-__user_fields = ["email", "firstname", "prefix", "lastname", "address", "housenumber"]
+__user_fields = ["email", "firstname", "prefix", "lastname", "address", "housenumber", "password"]
 
 
 def __authorized(route_func):
@@ -37,19 +37,6 @@ def __requires_keys(required_keys: list):
         return route_wrapper
 
     return decorator
-
-
-def __returns_user(route_func):
-    @wraps(route_func)
-    def route_wrapper(*args, **kwargs):
-        route_func(*args, **kwargs)
-        user = kwargs["user"]
-        if "dynamic_salt" in user:
-            del user["dynamic_salt"]
-        if "password" in user:
-            del user["password"]
-        return json.dumps({"success": True, "user": user})
-    return route_wrapper()
 
 
 def __requires_login(route_func):
@@ -92,9 +79,9 @@ def register():
     response = {"success": can_be_registered}
 
     if can_be_registered:
-        for k in user_data:
-            if k not in __user_fields:
-                del user_data[k]
+        extra_keys = [k for k in user_data if k not in __user_fields]
+        for k in extra_keys:
+            del user_data[k]
 
         new_user = datastore.Entity(key=ds.key('user'))
         user_data["dynamic_salt"] = mk_salt()
@@ -116,44 +103,48 @@ def register():
 @app.route('/login/', methods=["POST"])
 @__authorized
 @__requires_keys(["email", "password"])
-@__returns_user
 @__requires_login
 def login(ds, user: dict):
-    pass
+    del user["dynamic_salt"]
+    del user["password"]
+    return json.dumps({"success": True, "user": user})
 
 
 @app.route('/edit/', methods=["POST"])
 @__authorized
 @__requires_keys(["email", "password"])
-@__returns_user
 @__requires_login
 def edit(ds, user: dict):
     passed_data = request.get_json()
     for key in passed_data:
-        if key in __user_fields:
+        if key in __user_fields and key != "password" and key != "dynamic_salt":
             user[key] = passed_data[key]
     ds.put(user)
+    del user["dynamic_salt"]
+    del user["password"]
+    return json.dumps({"success": True, "user": user})
 
 
 @app.route('/add_track_code/', methods=["POST"])
 @__authorized
 @__requires_keys(["email", "password", "track_code"])
-@__returns_user
 @__requires_login
 def add_track_code(ds, user: dict):
     passed_data = request.get_json()
     parcels = json.loads(user["parcels"])
     new_track_code = passed_data["track_code"]
     if new_track_code not in parcels:
-        parcels.add(new_track_code)
+        parcels.append(new_track_code)
     user["parcels"] = json.dumps(parcels)
     ds.put(user)
+    del user["dynamic_salt"]
+    del user["password"]
+    return json.dumps({"success": True, "user": user})
 
 
 @app.route('/remove_track_code/', methods=["POST"])
 @__authorized
 @__requires_keys(["email", "password", "track_code"])
-@__returns_user
 @__requires_login
 def remove_track_code(ds, user: dict):
     passed_data = request.get_json()
@@ -163,6 +154,9 @@ def remove_track_code(ds, user: dict):
         parcels.remove(old_track_code)
     user["parcels"] = json.dumps(parcels)
     ds.put(user)
+    del user["dynamic_salt"]
+    del user["password"]
+    return json.dumps({"success": True, "user": user})
 
 
 if __name__ == '__main__':

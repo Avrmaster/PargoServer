@@ -7,7 +7,7 @@ from flask import Flask, request
 from google.cloud import datastore
 
 app = Flask(__name__)
-__user_fields = ["email", "firstname", "prefix", "lastname", "address", "housenumber", "password"]
+__user_fields = ["email", "firstname", "prefix", "lastname", "address", "housenumber"]
 
 
 def __authorized(route_func):
@@ -18,10 +18,11 @@ def __authorized(route_func):
             return route_func(*args, **kwargs)
         else:
             return json.dumps({"success": False, "cause": "unauthorized access"})
+
     return route_wrapper
 
 
-def __requires_data(required_keys: list):
+def __requires_keys(required_keys: list):
     def decorator(route_func):
         @wraps(route_func)
         def route_wrapper(*args, **kwargs):
@@ -32,13 +33,55 @@ def __requires_data(required_keys: list):
                 missing_fields = [k for k in required_keys if k not in passed_data]
                 return json.dumps({"success": False, "cause": f"not all needed fields were passed. "
                                                               f"Missing: {missing_fields}"})
+
         return route_wrapper
+
     return decorator
+
+
+def __returns_user(route_func):
+    @wraps(route_func)
+    def route_wrapper(*args, **kwargs):
+        route_func(*args, **kwargs)
+        user = kwargs["user"]
+        if "dynamic_salt" in user:
+            del user["dynamic_salt"]
+        if "password" in user:
+            del user["password"]
+        return json.dumps({"success": True, "user": user})
+    return route_wrapper()
+
+
+def __requires_login(route_func):
+    @wraps(route_func)
+    def route_wrapper(*args, **kwargs):
+        response = {}
+        ds = datastore.Client()
+        passed_data = request.get_json()
+        email = passed_data["email"]
+        password = passed_data["password"]
+
+        query = ds.query(kind='user')
+        query.add_filter("email", '=', email)
+        results = list(query.fetch())
+        if len(results) < 1:
+            response["success"] = False
+            response["cause"] = "User with given email does not exist"
+        else:
+            user = results[0]
+            if hash_pass(password, user["dynamic_salt"]) == user["password"]:
+                return route_func(ds=ds, user=user, *args, **kwargs)
+            else:
+                response["success"] = False
+                response["cause"] = "Invalid password"
+        return json.dumps(response)
+
+    return route_wrapper
 
 
 @app.route('/register/', methods=["POST"])
 @__authorized
-@__requires_data(__user_fields)
+@__requires_keys(__user_fields + ["password"])
 def register():
     ds = datastore.Client()
     user_data = request.get_json()
@@ -72,44 +115,54 @@ def register():
 
 @app.route('/login/', methods=["POST"])
 @__authorized
-@__requires_data(["email", "password"])
-def login():
-    ds = datastore.Client()
-    user_data = request.get_json()
-    response = {}
-
-    query = ds.query(kind='user')
-    query.add_filter("email", '=', user_data["email"])
-    results = list(query.fetch())
-    if len(results) < 1:
-        response["success"] = False
-        response["cause"] = "User with given email does not exist"
-    else:
-        user = results[0]
-        if hash_pass(user_data["password"], user["dynamic_salt"]) == user["password"]:
-            response["success"] = True
-            del user["dynamic_salt"]
-            del user["password"]
-            response["user"] = user
-        else:
-            response["success"] = False
-            response["cause"] = "Invalid password"
-
-    return json.dumps(response)
+@__requires_keys(["email", "password"])
+@__returns_user
+@__requires_login
+def login(ds, user: dict):
+    pass
 
 
-@app.route('/edit/', methods=["GET", "POST"])
+@app.route('/edit/', methods=["POST"])
 @__authorized
-@__requires_data(["email", "password"])
-def edit():
-    return f"Got {request.args} as a args. {request.data} as data. {request.form} as form. {request.values} as values"
+@__requires_keys(["email", "password"])
+@__returns_user
+@__requires_login
+def edit(ds, user: dict):
+    passed_data = request.get_json()
+    for key in passed_data:
+        if key in __user_fields:
+            user[key] = passed_data[key]
+    ds.put(user)
 
 
-@app.route('/add_track_code/', methods=["GET", "POST"])
+@app.route('/add_track_code/', methods=["POST"])
 @__authorized
-@__requires_data(["email", "password", "track_code"])
-def add_track_code():
-    return f"Got {request.args} as a args. {request.data} as data. {request.form} as form. {request.values} as values"
+@__requires_keys(["email", "password", "track_code"])
+@__returns_user
+@__requires_login
+def add_track_code(ds, user: dict):
+    passed_data = request.get_json()
+    parcels = json.loads(user["parcels"])
+    new_track_code = passed_data["track_code"]
+    if new_track_code not in parcels:
+        parcels.add(new_track_code)
+    user["parcels"] = json.dumps(parcels)
+    ds.put(user)
+
+
+@app.route('/remove_track_code/', methods=["POST"])
+@__authorized
+@__requires_keys(["email", "password", "track_code"])
+@__returns_user
+@__requires_login
+def remove_track_code(ds, user: dict):
+    passed_data = request.get_json()
+    parcels = json.loads(user["parcels"])
+    old_track_code = passed_data["track_code"]
+    if old_track_code in parcels:
+        parcels.remove(old_track_code)
+    user["parcels"] = json.dumps(parcels)
+    ds.put(user)
 
 
 if __name__ == '__main__':

@@ -7,7 +7,7 @@ from flask import Flask, request
 from google.cloud import datastore
 
 app = Flask(__name__)
-__user_fields = ["email", "firstname", "prefix", "lastname", "address", "housenumber", "password"]
+__user_fields = ["email", "firstname", "prefix", "lastname", "address", "housenumber", "password", "phone"]
 
 
 def __authorized(route_func):

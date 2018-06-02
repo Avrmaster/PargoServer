@@ -159,5 +159,18 @@ def remove_track_code(ds, user: dict):
     return json.dumps({"success": True, "user": user})
 
 
+@app.route('/register_launch/', methods=["POST"])
+@__authorized
+@__requires_keys(["data"])
+def register_launch():
+    ds = datastore.Client()
+    new_launch = datastore.Entity(key=ds.key('launches'))
+    new_launch.update({
+        "data": request.get_json()["data"]
+    })
+    ds.put(new_launch)
+    return json.dumps({"success": True})
+
+
 if __name__ == '__main__':
     app.run(debug=True)
